@@ -67,6 +67,7 @@ typedef struct packed {
     logic       lit2_sign_extend;
     logic       lit1_mirror_disp;
     logic       lit2_mirror_disp;
+    logic [2:0] lit1_done;              // Bytes already captured for partial LIT1 immediates
     logic       need_sib;
     logic [2:0] pending_imm_size;
     logic       pending_imm_sign_extend;
@@ -122,6 +123,9 @@ logic          lit2_ready;
 decoder_work_t sib_work;
 decoder_work_t lit1_work;
 decoder_work_t lit2_work;
+decoder_work_t lit1_partial_work;
+logic          lit1_partial_ready;
+logic [2:0]    lit1_partial_size;
 
 always_comb begin
     build_struct_work(struct_work, struct_len);
@@ -140,13 +144,31 @@ always_comb begin
                                 work.lit1_sign_extend, work.lit1_mirror_disp);
     lit2_work = capture_literal(work, work.lit2_kind, work.lit2_size,
                                 work.lit2_sign_extend, work.lit2_mirror_disp);
+
+    // Partial literal capture for imm32-style LIT1 immediates.
+    // If only 1..3 bytes are available, consume them now instead of waiting
+    // for the complete 4-byte literal.  The remaining bytes are captured by
+    // the normal DEC_LIT1 path later.
+    lit1_partial_ready = 1'b0;
+    lit1_partial_size = 3'd0;
+    lit1_partial_work = work;
+    if ((dec_state == DEC_LIT1) && !lit1_ready && !pf_empty && !decq_full && !q_flush &&
+        (work.lit1_kind == LIT_IMM) && (work.entry.imm_size == 3'd4) &&
+        !work.entry.stack_op && !work.lit1_sign_extend && (pf_count != 6'd0)) begin
+        lit1_partial_size = (pf_count[2:0] < work.lit1_size) ? pf_count[2:0] : work.lit1_size;
+        if (lit1_partial_size != 3'd0) begin
+            lit1_partial_ready = 1'b1;
+            lit1_partial_work = capture_literal_partial(work, lit1_partial_size);
+        end
+    end
 end
 
 assign q_pop_bytes =
     (dec_state == DEC_STRUCT) ? ((consume_prefix || consume_0f) && !pf_empty && !q_flush ? 3'd1 :
                                  struct_valid ? struct_len : 3'd0) :
     (dec_state == DEC_SIB)    ? (sib_ready ? 3'd1 : 3'd0) :
-    (dec_state == DEC_LIT1)   ? (lit1_ready ? work.lit1_size : 3'd0) :
+    (dec_state == DEC_LIT1)   ? (lit1_ready ? work.lit1_size :
+                                 lit1_partial_ready ? lit1_partial_size : 3'd0) :
     (dec_state == DEC_LIT2)   ? (lit2_ready ? work.lit2_size : 3'd0) :
                                 3'd0;
 
@@ -373,6 +395,8 @@ always_ff @(posedge clk or negedge reset_n) begin
                         prefix_rep_lock <= PREFIX_NOREPLOCK;
                         prefix_seg <= PREFIX_NOSEG;
                     end
+                end else if (lit1_partial_ready) begin
+                    work <= lit1_partial_work;
                 end
             end
 
@@ -664,9 +688,24 @@ function automatic decoder_work_t capture_literal(
         out = in;
         value = literal_value(q_window, size, sign_extend);
         if (kind == LIT_IMM) begin
-            out.entry.immediate = value;
-            if (mirror_disp)
-                out.entry.displacement = value;
+            if (in.lit1_done != 3'd0) begin
+                out.entry.immediate = in.entry.immediate;
+                for (int b = 0; b < 4; b++) begin
+                    if (b < size)
+                        out.entry.immediate[(int'(in.lit1_done) + b) * 8 +: 8] = q_window[b * 8 +: 8];
+                end
+                if (mirror_disp) begin
+                    out.entry.displacement = in.entry.displacement;
+                    for (int b = 0; b < 4; b++) begin
+                        if (b < size)
+                            out.entry.displacement[(int'(in.lit1_done) + b) * 8 +: 8] = q_window[b * 8 +: 8];
+                    end
+                end
+            end else begin
+                out.entry.immediate = value;
+                if (mirror_disp)
+                    out.entry.displacement = value;
+            end
         end else if (kind == LIT_DISP) begin
             if (in.lit1_kind == LIT_NONE) begin
                 unique case (size)
@@ -685,6 +724,7 @@ function automatic decoder_work_t capture_literal(
             out.lit1_size = 3'd0;
             out.lit1_sign_extend = 1'b0;
             out.lit1_mirror_disp = 1'b0;
+            out.lit1_done = 3'd0;
         end else begin
             out.lit2_kind = LIT_NONE;
             out.lit2_size = 3'd0;
@@ -692,6 +732,33 @@ function automatic decoder_work_t capture_literal(
             out.lit2_mirror_disp = 1'b0;
         end
         capture_literal = out;
+    end
+endfunction
+
+function automatic decoder_work_t capture_literal_partial(
+    input decoder_work_t in,
+    input logic [2:0]    size
+);
+    decoder_work_t out;
+    begin
+        out = in;
+
+        for (int b = 0; b < 4; b++) begin
+            if (b < size)
+                out.entry.immediate[(int'(in.lit1_done) + b) * 8 +: 8] = q_window[b * 8 +: 8];
+        end
+
+        if (in.lit1_mirror_disp) begin
+            for (int b = 0; b < 4; b++) begin
+                if (b < size)
+                    out.entry.displacement[(int'(in.lit1_done) + b) * 8 +: 8] = q_window[b * 8 +: 8];
+            end
+        end
+
+        out.lit1_done = in.lit1_done + size;
+        out.lit1_size = in.lit1_size - size;
+
+        capture_literal_partial = out;
     end
 endfunction
 
