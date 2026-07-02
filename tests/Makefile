@@ -50,13 +50,13 @@ build: obj_dir/Vtb_z386 obj_dir/Vtb_protected_mode
 obj_dir/Vtb_z386: $(RTL_SRCS) $(TB_SRCS) $(CPP_SRCS)
 	@echo "Building z386 testbench with Verilator..."
 	cp -f ../*.hex .
-	$(VERILATOR) $(VFLAGS) --top-module tb_z386 $(TB_SRCS) $(RTL_SRCS) $(CPP_SRCS)
+	$(VERILATOR) $(VFLAGS) --top-module tb_z386 $(RTL_SRCS) $(TB_SRCS) $(CPP_SRCS)
 	@echo "Build complete: obj_dir/Vtb_z386"
 
 obj_dir/Vtb_protected_mode: $(RTL_SRCS) $(TB_PROT_SRCS) $(CPP_PROT_SRCS)
 	@echo "Building protected mode testbench with Verilator..."
 	cp -f ../*.hex .
-	$(VERILATOR) $(VFLAGS) --top-module tb_protected_mode $(TB_PROT_SRCS) $(RTL_SRCS) $(CPP_PROT_SRCS)
+	$(VERILATOR) $(VFLAGS) --top-module tb_protected_mode $(RTL_SRCS) $(TB_PROT_SRCS) $(CPP_PROT_SRCS)
 	@echo "Build complete: obj_dir/Vtb_protected_mode"
 
 test: test-simple
