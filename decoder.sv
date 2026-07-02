@@ -440,6 +440,7 @@ task automatic build_struct_work(
     logic [5:0]  group_code;
     logic        has_modrm;
     logic        has_sib;
+    logic        fast_lea_sib_disp8;
     logic [2:0]  disp_size;
     logic [2:0]  imm_total_size;
     logic [2:0]  imm_first_size;
@@ -469,6 +470,7 @@ task automatic build_struct_work(
         imm_sign_extend = 1'b0;
         imm_total_size = 3'd0;
         imm_first_size = 3'd0;
+        fast_lea_sib_disp8 = 1'b0;
 
 `ifdef USE_ENTRY_ROM
         entry_first = entry_rom_sel;        // M10K ROM (addr early) + live {data32,pe} select
@@ -483,8 +485,12 @@ task automatic build_struct_work(
 
         if (has_modrm) begin
             has_sib = addr32 && (modrm[7:6] != 2'b11) && (modrm[2:0] == 3'b100);
+            // Fast-decode LEA r32,[base+index*scale+disp8] when all bytes are in q_window.
+            // This avoids DEC_SIB + DEC_LIT1 for the common 4-byte SIB+disp8 LEA form
+            // used by the timing benchmark: 8D 44 BE 20.
+            fast_lea_sib_disp8 = (opcode == 8'h8D) && addr32 && has_sib && (modrm[7:6] == 2'b01);
             disp_size = has_sib ? 3'd0 : modrm_disp_size(addr32, modrm, 8'h00, 1'b0);
-            s_len = 3'd2;
+            s_len = fast_lea_sib_disp8 ? 3'd4 : 3'd2;
 
             unique case (ctl_bits[11:10])
                 2'b00: imm_total_size = 3'd1;
@@ -508,11 +514,13 @@ task automatic build_struct_work(
             w.entry.has_modrm = 1'b1;
             w.entry.modrm = modrm;
             w.entry.has_sib = has_sib;
-            w.entry.sib = 8'h00;
+            w.entry.sib = fast_lea_sib_disp8 ? sib : 8'h00;
             w.entry.imm_size = imm_total_size;
-            w.need_sib = has_sib;
-            w.pending_imm_size = has_sib ? imm_total_size : 3'd0;
-            w.pending_imm_sign_extend = has_sib ? imm_sign_extend : 1'b0;
+            if (fast_lea_sib_disp8)
+                w.entry.displacement = {24'h0, q_window[31:24]};  // raw disp8; EA stage sign-extends
+            w.need_sib = has_sib && !fast_lea_sib_disp8;
+            w.pending_imm_size = (has_sib && !fast_lea_sib_disp8) ? imm_total_size : 3'd0;
+            w.pending_imm_sign_extend = (has_sib && !fast_lea_sib_disp8) ? imm_sign_extend : 1'b0;
             select_register_fields(prefix_0f, opcode, 1'b1, modrm,
                                    w.entry.src_reg_sel, w.entry.dst_reg_sel);
 
