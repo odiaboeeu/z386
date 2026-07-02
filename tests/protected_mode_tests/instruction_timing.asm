@@ -562,6 +562,9 @@ phase_pop_mem_fail:
 phase_alu_reg_mem:
     mov esi, LOAD_ADDR
     mov dword [esi], 1
+    xor edx, edx
+    add edx, [esi]          ; warm up ALU reg,mem path outside measured window
+    add edx, [esi]          ; warm up ALU reg,mem path outside measured window
     xor eax, eax
 
 alu_mem_01: add eax, [esi]
