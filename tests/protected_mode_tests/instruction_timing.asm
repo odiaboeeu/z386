@@ -549,14 +549,141 @@ pop_mem_08: pop dword [edi]
     jne short phase_pop_mem_fail
     cmp dword [edi], POP_VALUE
     jne short phase_pop_mem_fail
+    jmp phase_alu_reg_mem
 
+phase_pop_mem_fail:
+    jmp fail_12
+
+    times (0x1300 - ($ - $$)) db 0x90
+
+;------------------------------------------------------------------------------
+; Phase 19: ALU reg,mem
+;------------------------------------------------------------------------------
+phase_alu_reg_mem:
+    mov esi, LOAD_ADDR
+    mov dword [esi], 1
+    xor eax, eax
+
+alu_mem_01: add eax, [esi]
+alu_mem_02: add eax, [esi]
+alu_mem_03: add eax, [esi]
+alu_mem_04: add eax, [esi]
+alu_mem_05: add eax, [esi]
+alu_mem_06: add eax, [esi]
+alu_mem_07: add eax, [esi]
+alu_mem_08: add eax, [esi]
+
+    cmp eax, ITERATIONS
+    jne short phase_alu_reg_mem_fail
+    jmp phase_byte_load
+
+phase_alu_reg_mem_fail:
+    jmp fail_13
+
+    times (0x1400 - ($ - $$)) db 0x90
+
+;------------------------------------------------------------------------------
+; Phase 20: Byte load
+;------------------------------------------------------------------------------
+phase_byte_load:
+    mov esi, LOAD_ADDR
+    mov dword [esi], 0x0000005A
+    xor eax, eax
+
+byte_load_01: mov al, [esi]
+byte_load_02: mov al, [esi]
+byte_load_03: mov al, [esi]
+byte_load_04: mov al, [esi]
+byte_load_05: mov al, [esi]
+byte_load_06: mov al, [esi]
+byte_load_07: mov al, [esi]
+byte_load_08: mov al, [esi]
+
+    cmp al, 0x5A
+    jne short phase_byte_load_fail
+    jmp phase_byte_store
+
+phase_byte_load_fail:
+    jmp fail_14
+
+    times (0x1500 - ($ - $$)) db 0x90
+
+;------------------------------------------------------------------------------
+; Phase 21: Byte store
+;------------------------------------------------------------------------------
+phase_byte_store:
+    mov edi, STORE_ADDR
+    mov dword [edi], 0
+    mov al, 0xA5
+
+byte_store_01: mov [edi], al
+byte_store_02: mov [edi], al
+byte_store_03: mov [edi], al
+byte_store_04: mov [edi], al
+byte_store_05: mov [edi], al
+byte_store_06: mov [edi], al
+byte_store_07: mov [edi], al
+byte_store_08: mov [edi], al
+
+    cmp byte [edi], 0xA5
+    jne short phase_byte_store_fail
+    jmp phase_shift_imm
+
+phase_byte_store_fail:
+    jmp fail_15
+
+    times (0x1600 - ($ - $$)) db 0x90
+
+;------------------------------------------------------------------------------
+; Phase 22: Shift reg,imm
+;------------------------------------------------------------------------------
+phase_shift_imm:
+    mov eax, 0x12345678
+
+shift_imm_01: shr eax, 4
+shift_imm_02: shr eax, 4
+shift_imm_03: shr eax, 4
+shift_imm_04: shr eax, 4
+shift_imm_05: shr eax, 4
+shift_imm_06: shr eax, 4
+shift_imm_07: shr eax, 4
+shift_imm_08: shr eax, 4
+
+    cmp eax, 0
+    jne short phase_shift_imm_fail
+    jmp phase_cmp_imm
+
+phase_shift_imm_fail:
+    jmp fail_16
+
+    times (0x1700 - ($ - $$)) db 0x90
+
+;------------------------------------------------------------------------------
+; Phase 23: ALU reg,imm
+;------------------------------------------------------------------------------
+phase_cmp_imm:
+    mov ebx, IMM_VALUE
+
+cmp_imm_01: cmp ebx, IMM_VALUE
+cmp_imm_02: cmp ebx, IMM_VALUE
+cmp_imm_03: cmp ebx, IMM_VALUE
+cmp_imm_04: cmp ebx, IMM_VALUE
+cmp_imm_05: cmp ebx, IMM_VALUE
+cmp_imm_06: cmp ebx, IMM_VALUE
+cmp_imm_07: cmp ebx, IMM_VALUE
+cmp_imm_08: cmp ebx, IMM_VALUE
+
+    jne short phase_cmp_imm_fail
+    jmp phase_pass
+
+phase_cmp_imm_fail:
+    jmp fail_17
+
+phase_pass:
     mov al, STATUS_PASS
     mov dx, STATUS_PORT
     out dx, al
     hlt
-
-phase_pop_mem_fail:
-    jmp fail_12
 
 fail_01:
     mov al, 0x01
@@ -611,6 +738,21 @@ fail_11:
     jmp fail
 fail_12:
     mov al, 0x12
+    jmp fail
+fail_13:
+    mov al, 0x13
+    jmp fail
+fail_14:
+    mov al, 0x14
+    jmp fail
+fail_15:
+    mov al, 0x15
+    jmp fail
+fail_16:
+    mov al, 0x16
+    jmp fail
+fail_17:
+    mov al, 0x17
 
 fail:
     mov dx, DATA_PORT
